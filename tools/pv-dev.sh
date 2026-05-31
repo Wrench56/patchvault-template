@@ -29,7 +29,7 @@ add_new_pkg() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv add-pkg <pkg> <pkgurl>"
+    echo "Usage: pv-dev add-pkg <pkg> <pkgurl>"
     exit 0
 fi
 
