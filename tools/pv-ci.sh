@@ -5,6 +5,20 @@ die() {
     exit 1
 }
 
+url_exists() {
+    url="$1"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsIL --max-time 10 "$url" >/dev/null 2>&1
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --spider -T 10 "$url"
+    elif command -v fetch >/dev/null 2>&1; then
+        fetch -q -T 10 "$url" >/dev/null
+    else
+        die "No HTTP client found"
+    fi
+}
+
 lint_index() {
     index="$(pwd)/index"
     if [ ! -f "$index" ]; then
@@ -17,6 +31,30 @@ lint_index() {
         echo "Error: Multiple pkgurl-s found for pkg(s):"
         die "$duplist"
     fi
+}
+
+verify_urls() {
+    echo "Verifying URLs..."
+    if ! url_exists "https://google.com/"; then
+        die "Not connected to network! (Or Google is down?!)"
+    fi
+    echo "  Established baseline"
+
+    failed=0
+    while read -r pkg url; do
+        if url_exists "$url"; then
+            continue
+        fi
+
+        failed=1
+        echo "  Error: Invalid URL: $url for package $pkg"
+    done < "index"
+
+    if [ "$failed" -eq 1 ]; then
+        die "URL verification failed!"
+    fi
+
+    echo "Verified index URLs!"
 }
 
 refresh_index() {
@@ -95,13 +133,16 @@ build_patchsets() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv-ci lint-index|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
+    echo "Usage: pv-ci lint-index|verify-urls|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
     exit 0
 fi
 
 case "$1" in
     lint-index)
         lint_index
+        ;;
+    verify-urls)
+        verify_urls
         ;;
     refresh-index)
         refresh_index "$2"
@@ -111,6 +152,7 @@ case "$1" in
         ;;
     all)
         lint_index
+        verify_urls
         refresh_index "$2"
         build_patchsets "$2"
         ;;
