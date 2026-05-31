@@ -11,7 +11,7 @@ lint_index() {
         die "Error: No index found in root folder: $(pwd)"
     fi
 
-    duplist="$(cut -d' ' -f1 "$index" | uniq -d)"
+    duplist="$(cut -d' ' -f1 "$index" | sort | uniq -d)"
     if [ -n "$duplist" ]; then
         echo "Error: Multiple pkgurl-s found for pkg(s):"
         die "$duplist"
