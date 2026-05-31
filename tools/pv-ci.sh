@@ -61,8 +61,7 @@ build_patchset() {
     ps="$pkgdir/sets/$NAME.patch"
 
     mkdir -p "$pkgdir/sets"
-    rm -f "$ps"
-    touch "$ps"
+    printf "===> Assembled by PatchVault\nSource: %s\n\n%s\n" "$baseurl/$psconf" "$DESC" > "$ps"
 
     echo "Creating patchset $ps"
     printf '%s\n' "$PATCHES" | while IFS= read -r patchname; do
@@ -76,8 +75,8 @@ build_patchset() {
             continue
         fi
         echo "  Bundling patch: $patch"
-        cat "$patch" >> "$ps"
         echo "" >> "$ps"
+        cat "$patch" >> "$ps"
     done
 
     add_patchset "$baseurl" "$ps" "$pkgdir/patchsets"
