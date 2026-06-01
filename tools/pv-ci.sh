@@ -123,10 +123,13 @@ regen_distinfo() {
         fi
 
         echo "  Generating distinfo for: $pkg..."
-        rm -f "$pkg/distinfo"
-        find "$pkg" -type f -print | while IFS= read -r file; do
-            append_distinfo "$file" "$pkg/distinfo"
-        done
+        (
+            cd "$pkg" || die "  Error: Could not cd(1) into $pkg"
+            rm -f "distinfo"
+            find "." -type f -print | while IFS= read -r file; do
+                append_distinfo "${file#'./'}" "distinfo"
+            done
+        )
     done
     echo "Regenerated pkg distinfos"
 }
