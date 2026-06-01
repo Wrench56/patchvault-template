@@ -78,6 +78,59 @@ refresh_index() {
     echo "Root index refreshed!"
 }
 
+HASH_CMD=""
+detect_hashgen() {
+    if cksum -a sha256 /dev/null > /dev/null 2>&1; then
+        echo "  Found extended cksum(1) binary!"
+        HASH_CMD="cksum"
+    elif command -v sha256 > /dev/null 2>&1; then
+        echo "  Found sha256(1) binary!"
+        HASH_CMD="sha256"
+    elif digest -a sha256 /dev/null > /dev/null 2>&1; then
+        echo "  Found digest(1) binary!"
+        HASH_CMD="digest"
+    elif openssl dgst -sha256 /dev/null > /dev/null 2>&1; then
+        echo "  Found OpenSSL(1) binary!"
+        HASH_CMD="openssl"
+    else
+        die "  Error: Generation of SHA256 distinfo not supported! Please install one of the following tools: extended cksum(1); sha256(1); digest(1); OpenSSL(1)"
+    fi
+}
+
+append_distinfo() {
+    in="$1"
+    out="$2"
+
+    # TODO: Normalize digest and OpenSSL outputs (checks should work nonetheless)
+    case "$HASH_CMD" in
+        "cksum") cksum -a sha256 "$in" >> "$out" ;;
+        "sha256") sha256 "$in" >> "$out" ;;
+        "digest") digest -v -a sha256 "$in" >> "$out" ;;
+        "openssl") openssl dgst -sha256 "$in" >> "$out" ;;
+        *) die "  Error: Impossible state!" ;;
+    esac
+}
+
+regen_distinfo() {
+    echo "Regenerating distinfos..."
+    if [ -z "$HASH_CMD" ]; then
+        detect_hashgen
+    fi
+
+    for pkg in pkgs/*; do
+        if [ ! -e "$pkg" ]; then
+            continue
+        fi
+
+        echo "  Generating distinfo for: $pkg..."
+        rm -f "$pkg/distinfo"
+        find "$pkg" -type f -print | while IFS= read -r file; do
+            append_distinfo "$file" "$pkg/distinfo"
+        done
+    done
+    echo "Regenerated pkg distinfos"
+}
+
 add_patchset() {
     baseurl="$1"
     ps="$2"
@@ -133,7 +186,7 @@ build_patchsets() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv-ci lint-index|verify-urls|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
+    echo "Usage: pv-ci lint-index|verify-urls|regen-distinfo|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
     exit 0
 fi
 
@@ -147,6 +200,9 @@ case "$1" in
     refresh-index)
         refresh_index "$2"
         ;;
+    regen-distinfo)
+        regen_distinfo
+        ;;
     build-patchsets)
         build_patchsets "$2"
         ;;
@@ -155,6 +211,7 @@ case "$1" in
         verify_urls
         refresh_index "$2"
         build_patchsets "$2"
+        regen_distinfo
         ;;
     *)
         die "Unknown command: $1"
