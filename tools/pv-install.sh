@@ -1,5 +1,10 @@
 #!/bin/sh
 
+die() {
+    echo "$1"
+    exit 1
+}
+
 fetch_file() {
     url="$1"
     out="$2"
