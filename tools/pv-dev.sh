@@ -29,13 +29,32 @@ add_new_pkg() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv-dev add-pkg <pkg> <pkgurl>"
+    echo "Usage: pv-dev add-pkg <pkg> <pkgurl> | pv-dev set repo|pkg|pf <path>"
     exit 0
 fi
 
 case "$1" in
     add-pkg)
         add_new_pkg "$2" "$3"
+        ;;
+    set)
+        case "$2" in
+            repo)
+                export PVREPO_PATH="$3"
+                echo "export PVREPO_PATH=$PVREPO_PATH"
+                ;;
+            pkg)
+                export PVPKG="$3"
+                echo "export PVPKG=$PVPKG"
+                ;;
+            pf)
+                export PVPATCHFILE="$3"
+                echo "export PVPATCHFILE=$PVPATCHFILE"
+                ;;
+            *)
+                die "Unknown variable to set: $2"
+                ;;
+        esac
         ;;
     *)
         die "Unknown command: $1"
