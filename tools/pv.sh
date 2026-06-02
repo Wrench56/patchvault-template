@@ -90,6 +90,7 @@ match_pv_flags() {
     ' "$index_file"
 }
 
+PATCHSET=""
 fetch_patchset() {
     check="$1"
     pkg="$2"
@@ -130,9 +131,9 @@ fetch_patchset() {
     fi
 
     patchset_url="$(printf "%s" "$matches" | head -n1 | cut -d' ' -f1)"
-    patchset="${patchset_url##*/}"
-    echo "Fetching $patchset from $patchset_url..."
-    fetch_file "$patchset_url" "/tmp/sets/$patchset"
+    PATCHSET="${patchset_url##*/}"
+    echo "Fetching $PATCHSET from $patchset_url..."
+    fetch_file "$patchset_url" "/tmp/sets/$PATCHSET"
     
     if [ "$check" -eq 1 ]; then
         echo "Fetching distinfo..."
@@ -141,7 +142,7 @@ fetch_patchset() {
         distinfo=$(mktemp)
         fetch_file "$distinfo_url" "$distinfo"
 
-        verify_distinfo "$distinfo" "sets/$patchset"
+        verify_distinfo "$distinfo" "sets/$PATCHSET"
         rm "$distinfo"
     fi
 
@@ -154,6 +155,19 @@ apply_patch() {
 
     patch -p0 -N -d "$(pwd)" -i "/tmp/sets/$patchset"
 }
+
+if [ "$#" -eq 1 ]; then
+    echo "PatchVault Standard Tool"
+    echo ""
+    echo "Usage: pv <command> [...]"
+    echo ""
+    echo "Commands:"
+    echo "  fetch (-c/--check) <pkg>      Fetches (and verifies) a package's patchset that matches your PVFLAGS"
+    echo "  apply <patchset>              Applies a previously fetched patchset"
+    echo "  patch <pkg>                   Fetches and applies a package's patchset that matches your PVFLAGS"
+    echo ""
+    exit 0
+fi
 
 cmd="$1"
 shift
@@ -193,6 +207,16 @@ case "$cmd" in
             die "Missing patchset"
         fi
         apply_patch "$1"
+        ;;
+    patch)
+        # Same as fetch --check + apply
+        if [ ! "$#" -gt 0 ]; then
+            die "Missing package"
+        fi
+
+        mkdir -p "/tmp/sets"
+        fetch_patchset "1" "$1"
+        apply_patch "$PATCHSET"
         ;;
     *)
         die "Unknown command: $cmd"
