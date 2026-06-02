@@ -97,6 +97,51 @@ detect_hashgen() {
     fi
 }
 
+gen_hash() {
+    in="$1"
+
+    case "$HASH_CMD" in
+        "cksum") cksum -a sha256 "$in" ;;
+        "sha256") sha256 "$in" ;;
+        "digest") digest -v -a sha256 "$in" ;;
+        "openssl") openssl dgst -sha256 "$in" ;;
+        *) die "  Error: Impossible state!" ;;
+    esac
+}
+
+
+verify_distinfo() {
+    echo "Verifying distinfos..."
+    if [ -z "$HASH_CMD" ]; then
+        detect_hashgen
+    fi
+
+    for pkg in pkgs/*; do
+        if [ ! -e "$pkg" ]; then
+            continue
+        fi
+
+        echo "  Checking distinfo for: $pkg..."
+        (
+            cd "$pkg" || die "  Error: Could not cd(1) into $pkg"
+            if [ ! -f "distinfo" ]; then
+                echo "    Warning: distinfo for pkg does not exist"
+                exit 0
+            fi
+            while IFS= read -r line; do
+                file=$(echo "$line" | cut -f 2 -d ' ' | tr -d '()')
+                act=$(gen_hash "$file")
+                if [ "$act" = "$line" ]; then
+                    echo "    $file: Ok"
+                else
+                    die "    $file: FAILED"
+                fi
+            done < "distinfo"
+        )
+    done
+    echo "Verified pkg distinfos"
+}
+
 append_distinfo() {
     in="$1"
     out="$2"
@@ -189,7 +234,7 @@ build_patchsets() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv-ci lint-index|verify-urls|regen-distinfo|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
+    echo "Usage: pv-ci lint-index|verify-urls|verify-distinfo|regen-distinfo|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
     exit 0
 fi
 
@@ -199,6 +244,9 @@ case "$1" in
         ;;
     verify-urls)
         verify_urls
+        ;;
+    verify-distinfo)
+        verify_distinfo
         ;;
     refresh-index)
         refresh_index "$2"
@@ -212,6 +260,7 @@ case "$1" in
     all)
         lint_index
         verify_urls
+        verify_distinfo
         refresh_index "$2"
         build_patchsets "$2"
         regen_distinfo
