@@ -11,6 +11,18 @@ need_patch_env() {
     [ -n "$PVPATCHFILE" ] || die "PVPATCHFILE is not set"
 }
 
+init_pkg() {
+    pkg="$1"
+    if [ -z "$pkg" ]; then
+        die "No pkg provided"
+    fi
+    [ -n "$PVREPO_PATH" ] || die "PVREPO_PATH is not set"
+
+    mkdir -p "$PVREPO_PATH/pkgs/$pkg"
+    mkdir "$PVREPO_PATH/pkgs/$pkg/sets"
+    mkdir "$PVREPO_PATH/pkgs/$pkg/patches"
+}
+
 add_new_pkg() {
     pkg="$1"
     pkgurl="$2"
@@ -40,6 +52,9 @@ if [ "$#" -eq 0 ]; then
 fi
 
 case "$1" in
+    init-pkg)
+        init_pkg "$2"
+        ;;
     add-pkg)
         add_new_pkg "$2" "$3"
         ;;
