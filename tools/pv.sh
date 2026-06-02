@@ -62,7 +62,6 @@ search_patch_index() {
     pkgurl="$(echo "$result" | cut -d' ' -f2)"
 
     echo "Fetching package index from $pkgurl..."
-    tmp_index=$(mktemp)
     fetch_file "$pkgurl" "$tmp_index"
 
     echo "Applying PVFLAGS..."
@@ -77,9 +76,9 @@ search_patch_index() {
     fi
 
     patchset_url="$(printf "%s" "$matches" | head -n1 | cut -d' ' -f1)"
-    patchset=$(mktemp)
-    echo "Fetching patchset from $patchset_url..."
-    fetch_file "$patchset_url" "$patchset"
+    patchset="${patchset_url##*/}"
+    echo "Fetching $patchset from $patchset_url..."
+    fetch_file "$patchset_url" "/tmp/$patchset"
     patch -p0 -N -d "$(pwd)" -i "$patchset"
 }
 
