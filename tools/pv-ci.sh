@@ -168,6 +168,25 @@ regen_distinfo() {
     echo "Regenerated pkg distinfos"
 }
 
+regen_flags() {
+    echo "Regenerating flags..."
+    printf "" > "flags"
+    for psconf in pkgs/*/*.conf; do
+        if [ ! -e "$psconf" ]; then
+            continue
+        fi
+
+        echo "  Generating flags for: $psconf..."
+        FLAGS=
+        . "$psconf"
+        echo "$FLAGS" | tr ' ' '\n' >> "flags"
+    done
+    
+    grep . "flags" | sort -u -o "flags"
+    echo "Regenerated flags"
+
+}
+
 add_patchset() {
     baseurl="$1"
     ps="$2"
@@ -223,7 +242,7 @@ build_patchsets() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv-ci lint-index|verify-urls|verify-distinfo|regen-distinfo|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
+    echo "Usage: pv-ci lint-index|verify-urls|verify-distinfo|regen-distinfo|regen-flags|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
     exit 0
 fi
 
@@ -243,6 +262,9 @@ case "$1" in
     regen-distinfo)
         regen_distinfo
         ;;
+    regen-flags)
+        regen_flags
+        ;;
     build-patchsets)
         build_patchsets "$2"
         ;;
@@ -253,6 +275,7 @@ case "$1" in
         refresh_index "$2"
         build_patchsets "$2"
         regen_distinfo
+        regen_flags
         ;;
     *)
         die "Unknown command: $1"
