@@ -5,6 +5,58 @@ die() {
     exit 1
 }
 
+HASH_CMD=""
+detect_hashgen() {
+    if cksum -a sha256 /dev/null > /dev/null 2>&1; then
+        echo "  Found extended cksum(1) binary!"
+        HASH_CMD="cksum"
+    elif command -v sha256 > /dev/null 2>&1; then
+        echo "  Found sha256(1) binary!"
+        HASH_CMD="sha256"
+    elif digest -a sha256 /dev/null > /dev/null 2>&1; then
+        echo "  Found digest(1) binary!"
+        HASH_CMD="digest"
+    elif openssl dgst -sha256 /dev/null > /dev/null 2>&1; then
+        echo "  Found OpenSSL(1) binary!"
+        HASH_CMD="openssl"
+    else
+        die "  Error: Generation of SHA256 distinfo not supported! Please install one of the following tools: extended cksum(1); sha256(1); digest(1); OpenSSL(1)"
+    fi
+}
+
+gen_hash() {
+    in="$1"
+
+    # TODO: Normalize digest and OpenSSL outputs (checks should work nonetheless)
+    case "$HASH_CMD" in
+        "cksum") cksum -a sha256 "$in" ;;
+        "sha256") sha256 "$in" ;;
+        "digest") digest -v -a sha256 "$in" ;;
+        "openssl") openssl dgst -sha256 "$in" ;;
+        *) die "  Error: Impossible state!" ;;
+    esac
+}
+
+verify_distinfo() {
+    distinfo="$1"
+    patchset="$2"
+
+    echo "Verifying distinfo..."
+    if [ -z "$HASH_CMD" ]; then
+        detect_hashgen
+    fi
+
+    exp=$(grep -F "SHA256 ($patchset) = " "$distinfo")
+    act=$(cd "/tmp" || exit 0; gen_hash "$patchset") 
+    if [ "$exp" = "$act" ]; then
+        echo "  $patchset: Ok"
+    else
+        die "  $patchset: FAILED"
+    fi
+
+    echo "Verified pkg distinfo!"
+}
+
 fetch_file() {
     url="$1"
     dest="$2"
@@ -38,8 +90,10 @@ match_pv_flags() {
     ' "$index_file"
 }
 
-search_patch_index() {
-    pkg="$1"
+fetch_patchset() {
+    check="$1"
+    pkg="$2"
+
     if [ -z "$pkg" ]; then
         die "Requested package not given!"
     fi
@@ -78,28 +132,69 @@ search_patch_index() {
     patchset_url="$(printf "%s" "$matches" | head -n1 | cut -d' ' -f1)"
     patchset="${patchset_url##*/}"
     echo "Fetching $patchset from $patchset_url..."
-    fetch_file "$patchset_url" "/tmp/$patchset"
+    fetch_file "$patchset_url" "/tmp/sets/$patchset"
+    
+    if [ "$check" -eq 1 ]; then
+        echo "Fetching distinfo..."
+        distinfo_urlbase="${pkgurl%/*}"
+        distinfo_url="$distinfo_urlbase/distinfo"
+        distinfo=$(mktemp)
+        fetch_file "$distinfo_url" "$distinfo"
+
+        verify_distinfo "$distinfo" "sets/$patchset"
+        rm "$distinfo"
+    fi
+
+    # Cleanup
+    rm "$tmp_index"
 }
 
 apply_patch() {
     patchset="$1"
 
-    patch -p0 -N -d "$(pwd)" -i "/tmp/$patchset"
+    patch -p0 -N -d "$(pwd)" -i "/tmp/sets/$patchset"
 }
 
-if [ "$#" -eq 0 ]; then
-    echo "Usage: pv fetch <pkg> | pv apply <patchset>"
-    exit 0
-fi
+cmd="$1"
+shift
 
-case "$1" in
+case "$cmd" in
     fetch)
-        search_patch_index "$2"
+        check=0
+
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -c|--check)
+                    check=1
+                    shift
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -*)
+                    die "Unknown fetch option: $1"
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+        done
+
+        if [ ! "$#" -gt 0 ]; then
+            die "Missing package"
+        fi
+
+        mkdir -p "/tmp/sets"
+        fetch_patchset "$check" "$1"
         ;;
     apply)
-        apply_patch "$2"
+        if [ ! "$#" -gt 0 ]; then
+            die "Missing patchset"
+        fi
+        apply_patch "$1"
         ;;
     *)
-        die "Unknown command: $1"
+        die "Unknown command: $cmd"
         ;;
 esac
