@@ -79,17 +79,25 @@ search_patch_index() {
     patchset="${patchset_url##*/}"
     echo "Fetching $patchset from $patchset_url..."
     fetch_file "$patchset_url" "/tmp/$patchset"
-    patch -p0 -N -d "$(pwd)" -i "$patchset"
+}
+
+apply_patch() {
+    patchset="$1"
+
+    patch -p0 -N -d "$(pwd)" -i "/tmp/$patchset"
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv fetch <pkg>"
+    echo "Usage: pv fetch <pkg> | pv apply <patchset>"
     exit 0
 fi
 
 case "$1" in
     fetch)
         search_patch_index "$2"
+        ;;
+    apply)
+        apply_patch "$2"
         ;;
     *)
         die "Unknown command: $1"
