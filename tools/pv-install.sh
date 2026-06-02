@@ -75,6 +75,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 mkdir -p "/tmp/"
+baseurl=${baseurl%/}
 if [ "$std" -eq 1 ]; then   
     tmp="/tmp/pv"
     fetch_file "$baseurl/tools/pv.sh" "$tmp"
