@@ -100,6 +100,7 @@ detect_hashgen() {
 gen_hash() {
     in="$1"
 
+    # TODO: Normalize digest and OpenSSL outputs (checks should work nonetheless)
     case "$HASH_CMD" in
         "cksum") cksum -a sha256 "$in" ;;
         "sha256") sha256 "$in" ;;
@@ -142,20 +143,6 @@ verify_distinfo() {
     echo "Verified pkg distinfos"
 }
 
-append_distinfo() {
-    in="$1"
-    out="$2"
-
-    # TODO: Normalize digest and OpenSSL outputs (checks should work nonetheless)
-    case "$HASH_CMD" in
-        "cksum") cksum -a sha256 "$in" >> "$out" ;;
-        "sha256") sha256 "$in" >> "$out" ;;
-        "digest") digest -v -a sha256 "$in" >> "$out" ;;
-        "openssl") openssl dgst -sha256 "$in" >> "$out" ;;
-        *) die "  Error: Impossible state!" ;;
-    esac
-}
-
 regen_distinfo() {
     echo "Regenerating distinfos..."
     if [ -z "$HASH_CMD" ]; then
@@ -172,7 +159,9 @@ regen_distinfo() {
             cd "$pkg" || die "  Error: Could not cd(1) into $pkg"
             rm -f "distinfo"
             find "." -type f -print | while IFS= read -r file; do
-                append_distinfo "${file#'./'}" "distinfo"
+                file="${file#'./'}"
+                echo "    Hashing file: $file"
+                gen_hash "$file" >> "distinfo"
             done
         )
     done
