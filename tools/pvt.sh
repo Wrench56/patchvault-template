@@ -156,15 +156,15 @@ apply_patch() {
     patch -p0 -N -d "$(pwd)" -i "/tmp/sets/$patchset"
 }
 
-if [ "$#" -eq 1 ]; then
-    echo "PatchVault Standard Tool"
+if [ "$#" -le 1 ]; then
+    echo "$0 - PatchVault Standard Tool"
     echo ""
-    echo "Usage: pv <command> [...]"
+    echo "Usage: $0 <command> [...]"
     echo ""
     echo "Commands:"
-    echo "  fetch (-c/--check) <pkg>      Fetches (and verifies) a package's patchset that matches your PVFLAGS"
-    echo "  apply <patchset>              Applies a previously fetched patchset"
-    echo "  patch <pkg>                   Fetches and applies a package's patchset that matches your PVFLAGS"
+    echo "  fetch (-c/--check) <pkg>   Fetches (and verifies) a package's patchset that matches your PVFLAGS"
+    echo "  apply <patchset>           Applies a previously fetched patchset"
+    echo "  patch <pkg>                Fetches and applies a package's patchset that matches your PVFLAGS"
     echo ""
     exit 0
 fi

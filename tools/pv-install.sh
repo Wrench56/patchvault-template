@@ -77,8 +77,8 @@ done
 mkdir -p "/tmp/"
 baseurl=${baseurl%/}
 if [ "$std" -eq 1 ]; then   
-    tmp="/tmp/pv"
-    fetch_file "$baseurl/tools/pv.sh" "$tmp"
+    tmp="/tmp/pvt"
+    fetch_file "$baseurl/tools/pvt.sh" "$tmp"
     install_sh "$tmp"
 fi
 if [ "$dev" -eq 1 ]; then
