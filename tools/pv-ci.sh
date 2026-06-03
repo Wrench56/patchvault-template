@@ -176,6 +176,8 @@ regen_flags() {
 
         echo "  Generating flags for: $psconf..."
         FLAGS=
+
+        # shellcheck disable=SC1090
         . "$psconf"
         echo "$FLAGS" | tr ' ' '\n' >> "flags"
     done
