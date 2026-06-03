@@ -242,7 +242,7 @@ build_patchsets() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv-ci lint-index|verify-urls|verify-distinfo|regen-distinfo|regen-flags|regen-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
+    echo "Usage: pv-ci lint-index|verify-urls|verify-distinfo|regen-distinfo|regen-flags|regen-index <baseurl>|build-patchsets <baseurl>|all <baseurl>|all-local <basepath>"
     exit 0
 fi
 
@@ -275,6 +275,14 @@ case "$1" in
         regen_flags
         lint_index
         verify_urls
+        verify_distinfo
+        ;;
+    all-local)
+        regen_index "$2"
+        build_patchsets "$2"
+        regen_distinfo
+        regen_flags
+        lint_index
         verify_distinfo
         ;;
     *)
