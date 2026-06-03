@@ -1,0 +1,926 @@
+===> Assembled by PatchVault
+Source: https://raw.githubusercontent.com/Wrench56/patchvault-template/main/pkgs/st/common.conf
+
+
+A common configuration of the suckless terminal
+
+
+--- config.def.h
++++ config.def.h
+@@ -201,6 +201,8 @@ static Shortcut shortcuts[] = {
+ 	{ TERMMOD,              XK_Y,           selpaste,       {.i =  0} },
+ 	{ ShiftMask,            XK_Insert,      selpaste,       {.i =  0} },
+ 	{ TERMMOD,              XK_Num_Lock,    numlock,        {.i =  0} },
++	{ MODKEY,               XK_l,           copyurl,        {.i =  0} },
++	{ MODKEY|ShiftMask,     XK_L,           copyurl,        {.i =  1} }
+ };
+ 
+ /*
+--- st.c
++++ st.c
+@@ -201,6 +201,8 @@ static void tdefutf8(char);
+ static int32_t tdefcolor(const int *, int *, int);
+ static void tdeftran(char);
+ static void tstrsequence(uchar);
++static const char *findlastany(const char *, const char**, size_t);
++static const char *findfirstany(const char *, const char**, size_t);
+ 
+ static void drawregion(int, int, int, int);
+ 
+@@ -2703,3 +2705,128 @@ redraw(void)
+ 	tfulldirt();
+ 	draw();
+ }
++
++const char *
++findlastany(const char *str, const char**find, size_t len)
++{
++	const char *found = NULL;
++	int i = 0;
++
++	for (found = str + strlen(str) - 1; found >= str; --found) {
++		for(i = 0; i < len; i++) {
++			if (strncmp(found, find[i], strlen(find[i])) == 0) {
++				return found;
++			}
++		}
++	}
++
++	return NULL;
++}
++
++const char *
++findfirstany(const char *str, const char**find, size_t len)
++{
++	const char *found = NULL;
++	int i = 0;
++
++	for (found = str; found < str + strlen(str); ++found) {
++		for(i = 0; i < len; i++) {
++			if (strncmp(found, find[i], strlen(find[i])) == 0) {
++				return found;
++			}
++		}
++	}
++
++	return NULL;
++}
++
++/*
++ * Select and copy the previous url on screen (do nothing if there's no url).
++ *
++ * FIXME: doesn't handle urls that span multiple lines; will need to add support
++ *        for multiline "getsel()" first
++ */
++void
++copyurl(const Arg *arg) {
++	/*
++	 * () and [] can appear in urls, but excluding them here will reduce false
++	 * positives when figuring out where a given url ends.
++	 */
++	static const char URLCHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
++		"abcdefghijklmnopqrstuvwxyz"
++		"0123456789-._~:/?#@!$&'*+,;=%";
++
++	static const char* URLSTRINGS[] = {"http://", "https://"};
++
++	int row = 0, /* row of current URL */
++		col = 0, /* index of current URL start */
++		colend = 0, /* column of last occurrence */
++		passes = 0; /* how many rows have been scanned */
++
++	char linestr[term.col + 1];
++	const char *c = NULL,
++		 *match = NULL;
++
++	/*
++	 * arg->i = 0 --> botton-up
++	 * arg->i = 1 --> top-down
++	 */
++	row = sel.ob.x == -1 ? term.bot : arg->i ? sel.ne.y : sel.nb.y;
++	LIMIT(row, term.top, term.bot);
++
++	colend = sel.ob.x == -1 ? term.col : arg->i ? sel.ne.x : sel.nb.x;
++	LIMIT(colend, 0, term.col);
++
++	/*
++	 * Scan from (term.row - 1,term.col - 1) to (0,0) (or in reverse,
++	 * when arg->i = 1) and find previous/next occurrance of a URL.
++	 */
++	for (passes = 0; passes < term.row; passes++) {
++		if (!arg->i) {
++			/*
++			 * Read in each column of every row until
++			 * we hit previous occurrence of URL.
++			 */
++			for (col = 0; col < colend; ++col)
++				linestr[col] = term.line[row][col].u < 128
++					? term.line[row][col].u : ' ';
++			linestr[col] = '\0';
++
++			if ((match = findlastany(linestr, URLSTRINGS,
++						sizeof(URLSTRINGS)/sizeof(URLSTRINGS[0]))))
++				break;
++
++			if (--row < 0)
++				row = term.row - 1;
++
++			colend = term.col;
++		} else {
++			/*
++			 * Read in each column of every row until
++			 * we hit next occurrence of URL.
++			 */
++			for (col = colend + 1; col < term.col; ++col)
++				linestr[col] = term.line[row][col].u < 128
++					? term.line[row][col].u : ' ';
++			linestr[col] = '\0';
++
++			if ((match = findfirstany(linestr + colend + 1, URLSTRINGS,
++						sizeof(URLSTRINGS)/sizeof(URLSTRINGS[0]))))
++				break;
++
++			if (++row >= term.row)
++				row = 0;
++
++			colend = -1;
++		}
++	}
++
++	if (match) {
++		size_t l = strspn(match, URLCHARS);
++		selstart(match - linestr, row, 0);
++		selextend(match - linestr + l - 1, row, SEL_REGULAR, 0);
++		selextend(match - linestr + l - 1, row, SEL_REGULAR, 1);
++		xsetsel(getsel());
++		xclipcopy();
++	}
++}
+--- st.h
++++ st.h
+@@ -85,6 +85,7 @@ void printscreen(const Arg *);
+ void printsel(const Arg *);
+ void sendbreak(const Arg *);
+ void toggleprinter(const Arg *);
++void copyurl(const Arg *);
+ 
+ int tattrset(int);
+ void tnew(int, int);
+
+--- config.def.h
++++ config.def.h
+@@ -135,13 +135,21 @@
+ static unsigned int defaultrcs = 257;
+ 
+ /*
+- * Default shape of cursor
+- * 2: Block ("█")
+- * 4: Underline ("_")
+- * 6: Bar ("|")
+- * 7: Snowman ("☃")
+- */
+-static unsigned int cursorshape = 2;
++ * https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Functions-using-CSI-_-ordered-by-the-final-character-lparen-s-rparen:CSI-Ps-SP-q.1D81
++ * Default style of cursor
++ * 0: blinking block
++ * 1: blinking block (default)
++ * 2: steady block ("â–ˆ")
++ * 3: blinking underline
++ * 4: steady underline ("_")
++ * 5: blinking bar
++ * 6: steady bar ("|")
++ * 7: blinking st cursor
++ * 8: steady st cursor
++  */
++static unsigned int cursorstyle = 1;
++static Rune stcursor = 0x2603; /* snowman ("â˜ƒ") */
++ 
+ 
+ /*
+  * Default columns and rows numbers
+only in patch2:
+unchanged:
+--- x.c
++++ x.c
+@@ -253,6 +253,7 @@ static char *opt_name  = NULL;
+ static char *opt_title = NULL;
+ 
+ static uint buttons; /* bit field of pressed buttons */
++static int cursorblinks = 0;
+ 
+ void
+ clipcopy(const Arg *dummy)
+@@ -1561,29 +1562,44 @@ xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
+ 	/* draw the new one */
+ 	if (IS_SET(MODE_FOCUSED)) {
+ 		switch (win.cursor) {
+-		case 7: /* st extension */
+-			g.u = 0x2603; /* snowman (U+2603) */
++		default:
++		case 0: /* blinking block */
++		case 1: /* blinking block (default) */
++			if (IS_SET(MODE_BLINK))
++				break;
+ 			/* FALLTHROUGH */
+-		case 0: /* Blinking Block */
+-		case 1: /* Blinking Block (Default) */
+-		case 2: /* Steady Block */
++		case 2: /* steady block */
+ 			xdrawglyph(g, cx, cy);
+ 			break;
+-		case 3: /* Blinking Underline */
+-		case 4: /* Steady Underline */
++		case 3: /* blinking underline */
++			if (IS_SET(MODE_BLINK))
++				break;
++			/* FALLTHROUGH */
++		case 4: /* steady underline */
+ 			XftDrawRect(xw.draw, &drawcol,
+ 					borderpx + cx * win.cw,
+ 					borderpx + (cy + 1) * win.ch - \
+ 						cursorthickness,
+ 					win.cw, cursorthickness);
+ 			break;
+-		case 5: /* Blinking bar */
+-		case 6: /* Steady bar */
++		case 5: /* blinking bar */
++			if (IS_SET(MODE_BLINK))
++				break;
++			/* FALLTHROUGH */
++		case 6: /* steady bar */
+ 			XftDrawRect(xw.draw, &drawcol,
+ 					borderpx + cx * win.cw,
+ 					borderpx + cy * win.ch,
+ 					cursorthickness, win.ch);
+ 			break;
++		case 7: /* blinking st cursor */
++			if (IS_SET(MODE_BLINK))
++				break;
++			/* FALLTHROUGH */
++		case 8: /* steady st cursor */
++			g.u = stcursor;
++			xdrawglyph(g, cx, cy);
++			break;
+ 		}
+ 	} else {
+ 		XftDrawRect(xw.draw, &drawcol,
+@@ -1746,9 +1762,12 @@ xsetmode(int set, unsigned int flags)
+ int
+ xsetcursor(int cursor)
+ {
+-	if (!BETWEEN(cursor, 0, 7)) /* 7: st extension */
++	if (!BETWEEN(cursor, 0, 8)) /* 7-8: st extensions */
+ 		return 1;
+ 	win.cursor = cursor;
++	cursorblinks = win.cursor == 0 || win.cursor == 1 ||
++	               win.cursor == 3 || win.cursor == 5 ||
++	               win.cursor == 7;
+ 	return 0;
+ }
+ 
+@@ -1995,6 +2014,10 @@ run(void)
+ 		if (FD_ISSET(ttyfd, &rfd) || xev) {
+ 			if (!drawing) {
+ 				trigger = now;
++				if (IS_SET(MODE_BLINK)) {
++					win.mode ^= MODE_BLINK;
++				}
++				lastblink = now;
+ 				drawing = 1;
+ 			}
+ 			timeout = (maxlatency - TIMEDIFF(now, trigger)) \
+@@ -2005,7 +2028,7 @@ run(void)
+ 
+ 		/* idle detected or maxlatency exhausted -> draw */
+ 		timeout = -1;
+-		if (blinktimeout && tattrset(ATTR_BLINK)) {
++		if (blinktimeout && (cursorblinks || tattrset(ATTR_BLINK))) {
+ 			timeout = blinktimeout - TIMEDIFF(now, lastblink);
+ 			if (timeout <= 0) {
+ 				if (-timeout > blinktimeout) /* start visible */
+@@ -2041,7 +2064,7 @@ main(int argc, char *argv[])
+ {
+ 	xw.l = xw.t = 0;
+ 	xw.isfixed = False;
+-	xsetcursor(cursorshape);
++	xsetcursor(cursorstyle);
+ 
+ 	ARGBEGIN {
+ 	case 'a':
+
+--- config.def.h
++++ config.def.h
+@@ -209,6 +209,7 @@
+ 	{ TERMMOD,              XK_Y,           selpaste,       {.i =  0} },
+ 	{ ShiftMask,            XK_Insert,      selpaste,       {.i =  0} },
+ 	{ TERMMOD,              XK_Num_Lock,    numlock,        {.i =  0} },
++	{ TERMMOD,              XK_Return,      newterm,        {.i =  0} },
+ 	{ MODKEY,               XK_l,           copyurl,        {.i =  0} },
+ 	{ MODKEY|ShiftMask,     XK_L,           copyurl,        {.i =  1} }
+ };
+--- st.c
++++ st.c
+@@ -20,6 +20,8 @@
+ #include "st.h"
+ #include "win.h"
+ 
++extern char *argv0;
++
+ #if   defined(__linux)
+  #include <pty.h>
+ #elif defined(__OpenBSD__) || defined(__NetBSD__) || defined(__APPLE__)
+@@ -153,6 +155,7 @@
+ } STREscape;
+ 
+ static void execsh(char *, char **);
++static int chdir_by_pid(pid_t pid);
+ static void stty(char **);
+ static void sigchld(int);
+ static void ttywriteraw(const char *, size_t);
+@@ -808,6 +811,7 @@
+ 		if (pledge("stdio rpath tty proc", NULL) == -1)
+ 			die("pledge\n");
+ #endif
++		fcntl(m, F_SETFD, FD_CLOEXEC);
+ 		close(s);
+ 		cmdfd = m;
+ 		signal(SIGCHLD, sigchld);
+@@ -1061,4 +1065,38 @@
+ 
+ void
++newterm(const Arg* a)
++{
++	switch (fork()) {
++	case -1:
++		die("fork failed: %s\n", strerror(errno));
++		break;
++	case 0:
++		switch (fork()) {
++		case -1:
++			fprintf(stderr, "fork failed: %s\n", strerror(errno));
++			_exit(1);
++			break;
++		case 0:
++			chdir_by_pid(pid);
++			execl("/proc/self/exe", argv0, NULL);
++			_exit(1);
++			break;
++		default:
++			_exit(0);
++		}
++	default:
++		wait(NULL);
++	}
++}
++
++static int
++chdir_by_pid(pid_t pid)
++{
++	char buf[32];
++	snprintf(buf, sizeof buf, "/proc/%ld/cwd", (long)pid);
++	return chdir(buf);
++}
++
++void
+ tscrolldown(int orig, int n)
+ {
+--- st.h
++++ st.h
+@@ -81,6 +81,7 @@
+ void redraw(void);
+ void draw(void);
+ 
++void newterm(const Arg *);
+ void printscreen(const Arg *);
+ void printsel(const Arg *);
+ void sendbreak(const Arg *);
+
+--- config.def.h
++++ config.def.h
+@@ -96,32 +96,25 @@
+ /* Terminal colors (16 first used in escape sequence) */
+ static const char *colorname[] = {
+ 	/* 8 normal colors */
+-	"black",
+-	"red3",
+-	"green3",
+-	"yellow3",
+-	"blue2",
+-	"magenta3",
+-	"cyan3",
+-	"gray90",
++[0] = "#1e2127", 				/* black */
++[1] = "#e06c75",				/* red */
++[2] = "#98c379",				/* green */
++[3] = "#d19a66",				/* yellow */
++[4] = "#61afef",				/* blue */
++[5] = "#c678dd",				/* magenta */
++[6] = "#56b6c2",				/* cyan */
++[7] = "#abb2bf",				/* white */
+ 
+ 	/* 8 bright colors */
+-	"gray50",
+-	"red",
+-	"green",
+-	"yellow",
+-	"#5c5cff",
+-	"magenta",
+-	"cyan",
+-	"white",
++[8] = "#5c6370",				/* black */
++[9] = "#e06c75",				/* red */
++[10] = "#98c379",				/* green */
++[11] = "#d19a66",				/* yellow */
++[12] = "#61afef",				/* blue */
++[13] = "#c678dd",				/* magenta */
++[14] = "#56b6c2",				/* cyan */
++[15] = "#ffffff",				/* white */
+ 
+-	[255] = 0,
+-
+-	/* more colors can be added after 255 to use with DefaultXX */
+-	"#cccccc",
+-	"#555555",
+-	"gray90", /* default foreground colour */
+-	"black", /* default background colour */
+ };
+ 
+ 
+@@ -129,10 +122,10 @@
+  * Default colors (colorname index)
+  * foreground, background, cursor, reverse cursor
+  */
+-unsigned int defaultfg = 258;
+-unsigned int defaultbg = 259;
+-unsigned int defaultcs = 256;
+-static unsigned int defaultrcs = 257;
++unsigned int defaultfg = 7;
++unsigned int defaultbg = 0;
++unsigned int defaultcs = 8;
++static unsigned int defaultrcs = 15;
+ 
+ /*
+  * https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Functions-using-CSI-_-ordered-by-the-final-character-lparen-s-rparen:CSI-Ps-SP-q.1D81
+
+--- config.def.h
++++ config.def.h
+@@ -476,3 +476,14 @@
+ 	" !\"#$%&'()*+,-./0123456789:;<=>?"
+ 	"@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
+ 	"`abcdefghijklmnopqrstuvwxyz{|}~";
++
++/*
++ * Open urls starting with urlprefixes, contatining urlchars
++ * by passing as ARG1 to urlhandler.
++ */
++char* urlhandler = "xdg-open";
++char urlchars[] =
++	"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
++	"abcdefghijklmnopqrstuvwxyz"
++	"0123456789-._~:/?#@!$&'*+,;=%";
++char* urlprefixes[] = {"http://", "https://", NULL};
+--- st.c
++++ st.c
+@@ -641,6 +641,92 @@
+ 	return str;
+ }
+ 
++char *
++strstrany(char* s, char** strs) {
++	char *match;
++	for (int i = 0; strs[i]; i++) {
++		if ((match = strstr(s, strs[i]))) {
++			return match;
++		}
++	}
++	return NULL;
++}
++
++void
++highlighturlsline(int row)
++{
++	char *linestr = calloc(sizeof(char), term.col+1); /* assume ascii */
++	char *match;
++	for (int j = 0; j < term.col; j++) {
++		if (term.line[row][j].u < 127) {
++			linestr[j] = term.line[row][j].u;
++		}
++		linestr[term.col] = '\0';
++	}
++	int url_start = -1;
++	while ((match = strstrany(linestr + url_start + 1, urlprefixes))) {
++		url_start = match - linestr;
++		for (int c = url_start; c < term.col && strchr(urlchars, linestr[c]); c++) {
++			term.line[row][c].mode |= ATTR_URL;
++			tsetdirt(row, c);
++		}
++	}
++	free(linestr);
++}
++
++void
++unhighlighturlsline(int row)
++{
++	for (int j = 0; j < term.col; j++) {
++		Glyph* g = &term.line[row][j];
++		if (g->mode & ATTR_URL) {
++			g->mode &= ~ATTR_URL;
++			tsetdirt(row, j);
++		}
++	}
++	return;
++}
++
++int
++followurl(int col, int row) {
++	char *linestr = calloc(sizeof(char), term.col+1); /* assume ascii */
++	char *match;
++	for (int i = 0; i < term.col; i++) {
++		if (term.line[row][i].u < 127) {
++			linestr[i] = term.line[row][i].u;
++		}
++		linestr[term.col] = '\0';
++	}
++	int url_start = -1, found_url = 0;
++	while ((match = strstrany(linestr + url_start + 1, urlprefixes))) {
++		url_start = match - linestr;
++		int url_end = url_start;
++		for (int c = url_start; c < term.col && strchr(urlchars, linestr[c]); c++) {
++			url_end++;
++		}
++		if (url_start <= col && col < url_end) {
++			found_url = 1;
++			linestr[url_end] = '\0';
++			break;
++		}
++	}
++	if (!found_url) {
++		free(linestr);
++		return 0;
++	}
++
++	pid_t chpid;
++	if ((chpid = fork()) == 0) {
++		if (fork() == 0)
++			execlp(urlhandler, urlhandler, linestr + url_start, NULL);
++		exit(1);
++	}
++	if (chpid > 0)
++		waitpid(chpid, NULL, 0);
++	free(linestr);
++    return 1;
++}
++
+ void
+ selclear(void)
+ {
+@@ -2707,6 +2793,8 @@
+ 			continue;
+ 
+ 		term.dirty[y] = 0;
++		unhighlighturlsline(y);
++		highlighturlsline(y);
+ 		xdrawline(term.line[y], x1, y, x2);
+ 	}
+ }
+--- st.h
++++ st.h
+@@ -33,6 +33,7 @@
+ 	ATTR_WRAP       = 1 << 8,
+ 	ATTR_WIDE       = 1 << 9,
+ 	ATTR_WDUMMY     = 1 << 10,
++	ATTR_URL        = 1 << 11,
+ 	ATTR_BOLD_FAINT = ATTR_BOLD | ATTR_FAINT,
+ };
+ 
+@@ -107,6 +108,10 @@
+ int selected(int, int);
+ char *getsel(void);
+ 
++void highlighturlsline(int);
++void unhighlighturlsline(int);
++int followurl(int, int);
++
+ size_t utf8encode(Rune, char *);
+ 
+ void *xmalloc(size_t);
+@@ -126,3 +131,7 @@
+ extern unsigned int defaultfg;
+ extern unsigned int defaultbg;
+ extern unsigned int defaultcs;
++extern char *urlhandler;
++extern char urlchars[];
++extern char *urlprefixes[];
++extern int nurlprefixes;
+--- x.c
++++ x.c
+@@ -191,6 +191,7 @@
+ 
+ static void (*handler[LASTEvent])(XEvent *) = {
+ 	[KeyPress] = kpress,
++	[KeyRelease] = kpress,
+ 	[ClientMessage] = cmessage,
+ 	[ConfigureNotify] = resize,
+ 	[VisibilityNotify] = visibility,
+@@ -453,6 +454,10 @@
+ 	/* ignore Button<N>mask for Button<N> - it's set on release */
+ 	uint state = e->xbutton.state & ~buttonmask(e->xbutton.button);
+ 
++	if (release == 0 && e->xbutton.button == Button1) {
++		return followurl(evcol(e), evrow(e));
++	}
++
+ 	for (ms = mshortcuts; ms < mshortcuts + LEN(mshortcuts); ms++) {
+ 		if (ms->release == release &&
+ 		    ms->button == e->xbutton.button &&
+@@ -1496,7 +1501,7 @@
+ 	XftDrawGlyphFontSpec(xw.draw, fg, specs, len);
+ 
+ 	/* Render underline and strikethrough. */
+-	if (base.mode & ATTR_UNDERLINE) {
++	if (base.mode & ATTR_UNDERLINE || base.mode & ATTR_URL) {
+ 		XftDrawRect(xw.draw, fg, winx, winy + dc.font.ascent * chscale + 1,
+ 				width, 1);
+ 	}
+@@ -1878,6 +1883,11 @@
+ 	} else {
+ 		len = XLookupString(e, buf, sizeof buf, &ksym, NULL);
+ 	}
++
++	/* KeyRelease not relevant to shortcuts */
++	if (ev->type == KeyRelease)
++		return;
++
+ 	/* 1. shortcuts */
+ 	for (bp = shortcuts; bp < shortcuts + LEN(shortcuts); bp++) {
+ 		if (ksym == bp->keysym && match(bp->mod, e->state)) {
+
+--- x.c
++++ x.c
+@@ -692,6 +692,7 @@
+ 	XSetSelectionOwner(xw.dpy, XA_PRIMARY, xw.win, t);
+ 	if (XGetSelectionOwner(xw.dpy, XA_PRIMARY) != xw.win)
+ 		selclear();
++	clipcopy(NULL);
+ }
+ 
+ void
+
+--- st.c
++++ st.c
+@@ -2820,7 +2820,8 @@
+ 
+ 	drawregion(0, 0, term.col, term.row);
+ 	xdrawcursor(cx, term.c.y, term.line[term.c.y][cx],
+-			term.ocx, term.ocy, term.line[term.ocy][term.ocx]);
++		term.ocx, term.ocy, term.line[term.ocy][term.ocx],
++		term.line[term.ocy], term.col);
+ 	term.ocx = cx;
+ 	term.ocy = term.c.y;
+ 	xfinishdraw();
+--- st.h
++++ st.h
+@@ -37,6 +37,12 @@
+ 	ATTR_BOLD_FAINT = ATTR_BOLD | ATTR_FAINT,
+ };
+ 
++enum drawing_mode {
++    DRAW_NONE = 0,
++    DRAW_BG = 1 << 0,
++    DRAW_FG = 1 << 1,
++};
++
+ enum selection_mode {
+ 	SEL_IDLE = 0,
+ 	SEL_EMPTY = 1,
+--- x.c
++++ x.c
+@@ -142,7 +142,7 @@
+ 
+ static inline ushort sixd_to_16bit(int);
+ static int xmakeglyphfontspecs(XftGlyphFontSpec *, const Glyph *, int, int, int);
+-static void xdrawglyphfontspecs(const XftGlyphFontSpec *, Glyph, int, int, int);
++static void xdrawglyphfontspecs(const XftGlyphFontSpec *, Glyph, int, int, int, int);
+ static void xdrawglyph(Glyph, int, int);
+ static void xclear(int, int, int, int);
+ static int xgeommasktogravity(int);
+@@ -1382,7 +1382,7 @@
+ }
+ 
+ void
+-xdrawglyphfontspecs(const XftGlyphFontSpec *specs, Glyph base, int len, int x, int y)
++xdrawglyphfontspecs(const XftGlyphFontSpec *specs, Glyph base, int len, int x, int y, int dmode)
+ {
+ 	int charlen = len * ((base.mode & ATTR_WIDE) ? 2 : 1);
+ 	int winx = borderpx + x * win.cw, winy = borderpx + y * win.ch,
+@@ -1473,49 +1473,42 @@
+ 	if (base.mode & ATTR_INVISIBLE)
+ 		fg = bg;
+ 
+-	/* Intelligent cleaning up of the borders. */
+-	if (x == 0) {
+-		xclear(0, (y == 0)? 0 : winy, borderpx,
+-			winy + win.ch +
+-			((winy + win.ch >= borderpx + win.th)? win.h : 0));
+-	}
+-	if (winx + width >= borderpx + win.tw) {
+-		xclear(winx + width, (y == 0)? 0 : winy, win.w,
+-			((winy + win.ch >= borderpx + win.th)? win.h : (winy + win.ch)));
+-	}
+-	if (y == 0)
+-		xclear(winx, 0, winx + width, borderpx);
+-	if (winy + win.ch >= borderpx + win.th)
+-		xclear(winx, winy + win.ch, winx + width, win.h);
+-
+-	/* Clean up the region we want to draw to. */
+-	XftDrawRect(xw.draw, bg, winx, winy, width, win.ch);
+-
+-	/* Set the clip region because Xft is sometimes dirty. */
+-	r.x = 0;
+-	r.y = 0;
+-	r.height = win.ch;
+-	r.width = width;
+-	XftDrawSetClipRectangles(xw.draw, winx, winy, &r, 1);
+-
+-	/* Render the glyphs. */
+-	XftDrawGlyphFontSpec(xw.draw, fg, specs, len);
+-
+-	/* Render underline and strikethrough. */
+-	if (base.mode & ATTR_UNDERLINE || base.mode & ATTR_URL) {
+-		XftDrawRect(xw.draw, fg, winx, winy + dc.font.ascent * chscale + 1,
+-				width, 1);
+-	}
+-
+-	if (base.mode & ATTR_STRUCK) {
+-		XftDrawRect(xw.draw, fg, winx, winy + 2 * dc.font.ascent * chscale / 3,
+-				width, 1);
+-	}
+-
+-	/* Reset clip to none. */
+-	XftDrawSetClip(xw.draw, 0);
+-}
+-
++    if (dmode & DRAW_BG) {
++        /* Intelligent cleaning up of the borders. */
++        if (x == 0) {
++            xclear(0, (y == 0)? 0 : winy, borderpx,
++                   winy + win.ch +
++                   ((winy + win.ch >= borderpx + win.th)? win.h : 0));
++        }
++        if (winx + width >= borderpx + win.tw) {
++            xclear(winx + width, (y == 0)? 0 : winy, win.w,
++                   ((winy + win.ch >= borderpx + win.th)? win.h : (winy + win.ch)));
++        }
++        if (y == 0)
++            xclear(winx, 0, winx + width, borderpx);
++        if (winy + win.ch >= borderpx + win.th)
++            xclear(winx, winy + win.ch, winx + width, win.h);
++        /* Fill the background */
++        XftDrawRect(xw.draw, bg, winx, winy, width, win.ch);
++    }
++
++    if (dmode & DRAW_FG) {
++        /* Render the glyphs. */
++        XftDrawGlyphFontSpec(xw.draw, fg, specs, len);
++
++        /* Render underline and strikethrough. */
++        if (base.mode & ATTR_UNDERLINE) {
++            XftDrawRect(xw.draw, fg, winx, winy + dc.font.ascent + 1,
++                        width, 1);
++        }
++
++        if (base.mode & ATTR_STRUCK) {
++            XftDrawRect(xw.draw, fg, winx, winy + 2 * dc.font.ascent / 3,
++                        width, 1);
++        }
++    }
++ }
++ 
+ void
+ xdrawglyph(Glyph g, int x, int y)
+ {
+@@ -1523,18 +1516,21 @@
+ 	XftGlyphFontSpec spec;
+ 
+ 	numspecs = xmakeglyphfontspecs(&spec, &g, 1, x, y);
+-	xdrawglyphfontspecs(&spec, g, numspecs, x, y);
++	xdrawglyphfontspecs(&spec, g, numspecs, x, y, DRAW_BG | DRAW_FG);
+ }
+ 
+ void
+-xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
++xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og, Line line, int len)
+ {
+ 	Color drawcol;
+ 
+ 	/* remove the old cursor */
+ 	if (selected(ox, oy))
+ 		og.mode ^= ATTR_REVERSE;
+-	xdrawglyph(og, ox, oy);
++
++	/* Redraw the line where cursor was previously.
++	 * It will restore wide glyphs and ligatures broken by the cursor. */
++	xdrawline(line, 0, oy, len);
+ 
+ 	if (IS_SET(MODE_HIDE))
+ 		return;
+@@ -1679,32 +1675,39 @@
+ void
+ xdrawline(Line line, int x1, int y1, int x2)
+ {
+-	int i, x, ox, numspecs;
++	int i, x, ox, numspecs, numspecs_cached;
+ 	Glyph base, new;
+-	XftGlyphFontSpec *specs = xw.specbuf;
++	XftGlyphFontSpec *specs;
+ 
+-	numspecs = xmakeglyphfontspecs(specs, &line[x1], x2 - x1, x1, y1);
+-	i = ox = 0;
+-	for (x = x1; x < x2 && i < numspecs; x++) {
+-		new = line[x];
+-		if (new.mode == ATTR_WDUMMY)
+-			continue;
+-		if (selected(x, y1))
+-			new.mode ^= ATTR_REVERSE;
+-		if (i > 0 && ATTRCMP(base, new)) {
+-			xdrawglyphfontspecs(specs, base, i, ox, y1);
+-			specs += i;
+-			numspecs -= i;
+-			i = 0;
+-		}
+-		if (i == 0) {
+-			ox = x;
+-			base = new;
++	numspecs_cached = xmakeglyphfontspecs(xw.specbuf, &line[x1], x2 - x1, x1, y1);
++
++	/* Draw line in 2 passes: background and foreground. This way wide glyphs
++       won't get truncated (#223) */
++	for (int dmode = DRAW_BG; dmode <= DRAW_FG; dmode <<= 1) {
++		specs = xw.specbuf;
++		numspecs = numspecs_cached;
++		i = ox = 0;
++		for (x = x1; x < x2 && i < numspecs; x++) {
++			new = line[x];
++			if (new.mode == ATTR_WDUMMY)
++				continue;
++			if (selected(x, y1))
++				new.mode ^= ATTR_REVERSE;
++			if (i > 0 && ATTRCMP(base, new)) {
++				xdrawglyphfontspecs(specs, base, i, ox, y1, dmode);
++				specs += i;
++				numspecs -= i;
++				i = 0;
++			}
++			if (i == 0) {
++				ox = x;
++				base = new;
++			}
++			i++;
+ 		}
+-		i++;
++		if (i > 0)
++			xdrawglyphfontspecs(specs, base, i, ox, y1, dmode);
+ 	}
+-	if (i > 0)
+-		xdrawglyphfontspecs(specs, base, i, ox, y1);
+ }
+ 
+ void
+only in patch2:
+unchanged:
+--- win.h
++++ win.h
+@@ -25,7 +25,7 @@ enum win_mode {
+ 
+ void xbell(void);
+ void xclipcopy(void);
+-void xdrawcursor(int, int, Glyph, int, int, Glyph);
++void xdrawcursor(int, int, Glyph, int, int, Glyph, Line, int);
+ void xdrawline(Line, int, int, int);
+ void xfinishdraw(void);
+ void xloadcols(void);
+
+--- config.def.h
++++ config.def.h
+@@ -16,7 +16,7 @@ static int borderpx = 2;
+  * 4: value of shell in /etc/passwd
+  * 5: value of shell in config.h
+  */
+-static char *shell = "/bin/sh";
++static char *shell = "/bin/zsh";
+ char *utmp = NULL;
+ /* scroll program: to enable use a string like "scroll" */
+ char *scroll = NULL;
+--- st.c
++++ st.c
+@@ -671,9 +763,7 @@ execsh(char *cmd, char **args)
+ 			die("who are you?\n");
+ 	}
+ 
+-	if ((sh = getenv("SHELL")) == NULL)
+-		sh = (pw->pw_shell[0]) ? pw->pw_shell : cmd;
+-
++    sh = "/bin/zsh";
+ 	if (args) {
+ 		prog = args[0];
+ 		arg = NULL;
