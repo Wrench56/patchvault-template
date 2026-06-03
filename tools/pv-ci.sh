@@ -232,6 +232,7 @@ build_patchset() {
 
 build_patchsets() {
     baseurl="$1"
+    rm -f pkgs/*/patchsets
     for psconf in pkgs/*/*.conf; do
         if [ ! -e "$psconf" ]; then
             continue
