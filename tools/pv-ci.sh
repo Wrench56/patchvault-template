@@ -68,10 +68,8 @@ regen_index() {
         fi
 
         pkgname="${pkg#pkgs/}"
-        if ! grep -q "^$pkgname " "index"; then
-            echo "  New package detected: $pkgname"
-            echo "$pkgname $baseurl/pkgs/$pkg/patchsets" >> "index"
-        fi
+        echo "  New package detected: $pkgname"
+        echo "$pkgname $baseurl/pkgs/$pkgname/patchsets" >> "index"
     done
 
     sort -u -o "index" "index"
