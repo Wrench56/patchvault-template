@@ -1,0 +1,24 @@
+--- config.def.h
++++ config.def.h
+@@ -16,7 +16,7 @@ static int borderpx = 2;
+  * 4: value of shell in /etc/passwd
+  * 5: value of shell in config.h
+  */
+-static char *shell = "/bin/sh";
++static char *shell = "/bin/zsh";
+ char *utmp = NULL;
+ /* scroll program: to enable use a string like "scroll" */
+ char *scroll = NULL;
+--- st.c
++++ st.c
+@@ -671,9 +763,7 @@ execsh(char *cmd, char **args)
+ 			die("who are you?\n");
+ 	}
+ 
+-	if ((sh = getenv("SHELL")) == NULL)
+-		sh = (pw->pw_shell[0]) ? pw->pw_shell : cmd;
+-
++    sh = "/bin/zsh";
+ 	if (args) {
+ 		prog = args[0];
+ 		arg = NULL;

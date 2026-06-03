@@ -1,0 +1,23 @@
+--- Makefile
++++ Makefile
+@@ -47,7 +47,8 @@ install: st
+ 	mkdir -p $(DESTDIR)$(MANPREFIX)/man1
+ 	sed "s/VERSION/$(VERSION)/g" < st.1 > $(DESTDIR)$(MANPREFIX)/man1/st.1
+ 	chmod 644 $(DESTDIR)$(MANPREFIX)/man1/st.1
+-	tic -sx st.info
++	sed 's/st\([^t].*\)/st-git\1/g' st.info > st-git.info
++	tic -sx st-git.info
+ 	@echo Please see the README file regarding the terminfo entry of st.
+
+ uninstall:
+--- config.def.h
++++ config.def.h
+@@ -74,7 +74,7 @@ static unsigned int cursorthickness = 2;
+ static int bellvolume = 0;
+
+ /* default TERM value */
+-char *termname = "st-256color";
++char *termname = "st-git-256color";
+
+ /*
+  * spaces per tab

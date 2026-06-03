@@ -1,0 +1,192 @@
+--- config.def.h
++++ config.def.h
+@@ -476,3 +476,14 @@
+ 	" !\"#$%&'()*+,-./0123456789:;<=>?"
+ 	"@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
+ 	"`abcdefghijklmnopqrstuvwxyz{|}~";
++
++/*
++ * Open urls starting with urlprefixes, contatining urlchars
++ * by passing as ARG1 to urlhandler.
++ */
++char* urlhandler = "xdg-open";
++char urlchars[] =
++	"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
++	"abcdefghijklmnopqrstuvwxyz"
++	"0123456789-._~:/?#@!$&'*+,;=%";
++char* urlprefixes[] = {"http://", "https://", NULL};
+--- st.c
++++ st.c
+@@ -641,6 +641,92 @@
+ 	return str;
+ }
+ 
++char *
++strstrany(char* s, char** strs) {
++	char *match;
++	for (int i = 0; strs[i]; i++) {
++		if ((match = strstr(s, strs[i]))) {
++			return match;
++		}
++	}
++	return NULL;
++}
++
++void
++highlighturlsline(int row)
++{
++	char *linestr = calloc(sizeof(char), term.col+1); /* assume ascii */
++	char *match;
++	for (int j = 0; j < term.col; j++) {
++		if (term.line[row][j].u < 127) {
++			linestr[j] = term.line[row][j].u;
++		}
++		linestr[term.col] = '\0';
++	}
++	int url_start = -1;
++	while ((match = strstrany(linestr + url_start + 1, urlprefixes))) {
++		url_start = match - linestr;
++		for (int c = url_start; c < term.col && strchr(urlchars, linestr[c]); c++) {
++			term.line[row][c].mode |= ATTR_URL;
++			tsetdirt(row, c);
++		}
++	}
++	free(linestr);
++}
++
++void
++unhighlighturlsline(int row)
++{
++	for (int j = 0; j < term.col; j++) {
++		Glyph* g = &term.line[row][j];
++		if (g->mode & ATTR_URL) {
++			g->mode &= ~ATTR_URL;
++			tsetdirt(row, j);
++		}
++	}
++	return;
++}
++
++int
++followurl(int col, int row) {
++	char *linestr = calloc(sizeof(char), term.col+1); /* assume ascii */
++	char *match;
++	for (int i = 0; i < term.col; i++) {
++		if (term.line[row][i].u < 127) {
++			linestr[i] = term.line[row][i].u;
++		}
++		linestr[term.col] = '\0';
++	}
++	int url_start = -1, found_url = 0;
++	while ((match = strstrany(linestr + url_start + 1, urlprefixes))) {
++		url_start = match - linestr;
++		int url_end = url_start;
++		for (int c = url_start; c < term.col && strchr(urlchars, linestr[c]); c++) {
++			url_end++;
++		}
++		if (url_start <= col && col < url_end) {
++			found_url = 1;
++			linestr[url_end] = '\0';
++			break;
++		}
++	}
++	if (!found_url) {
++		free(linestr);
++		return 0;
++	}
++
++	pid_t chpid;
++	if ((chpid = fork()) == 0) {
++		if (fork() == 0)
++			execlp(urlhandler, urlhandler, linestr + url_start, NULL);
++		exit(1);
++	}
++	if (chpid > 0)
++		waitpid(chpid, NULL, 0);
++	free(linestr);
++    return 1;
++}
++
+ void
+ selclear(void)
+ {
+@@ -2707,6 +2793,8 @@
+ 			continue;
+ 
+ 		term.dirty[y] = 0;
++		unhighlighturlsline(y);
++		highlighturlsline(y);
+ 		xdrawline(term.line[y], x1, y, x2);
+ 	}
+ }
+--- st.h
++++ st.h
+@@ -33,6 +33,7 @@
+ 	ATTR_WRAP       = 1 << 8,
+ 	ATTR_WIDE       = 1 << 9,
+ 	ATTR_WDUMMY     = 1 << 10,
++	ATTR_URL        = 1 << 11,
+ 	ATTR_BOLD_FAINT = ATTR_BOLD | ATTR_FAINT,
+ };
+ 
+@@ -107,6 +108,10 @@
+ int selected(int, int);
+ char *getsel(void);
+ 
++void highlighturlsline(int);
++void unhighlighturlsline(int);
++int followurl(int, int);
++
+ size_t utf8encode(Rune, char *);
+ 
+ void *xmalloc(size_t);
+@@ -126,3 +131,7 @@
+ extern unsigned int defaultfg;
+ extern unsigned int defaultbg;
+ extern unsigned int defaultcs;
++extern char *urlhandler;
++extern char urlchars[];
++extern char *urlprefixes[];
++extern int nurlprefixes;
+--- x.c
++++ x.c
+@@ -191,6 +191,7 @@
+ 
+ static void (*handler[LASTEvent])(XEvent *) = {
+ 	[KeyPress] = kpress,
++	[KeyRelease] = kpress,
+ 	[ClientMessage] = cmessage,
+ 	[ConfigureNotify] = resize,
+ 	[VisibilityNotify] = visibility,
+@@ -453,6 +454,10 @@
+ 	/* ignore Button<N>mask for Button<N> - it's set on release */
+ 	uint state = e->xbutton.state & ~buttonmask(e->xbutton.button);
+ 
++	if (release == 0 && e->xbutton.button == Button1) {
++		return followurl(evcol(e), evrow(e));
++	}
++
+ 	for (ms = mshortcuts; ms < mshortcuts + LEN(mshortcuts); ms++) {
+ 		if (ms->release == release &&
+ 		    ms->button == e->xbutton.button &&
+@@ -1496,7 +1501,7 @@
+ 	XftDrawGlyphFontSpec(xw.draw, fg, specs, len);
+ 
+ 	/* Render underline and strikethrough. */
+-	if (base.mode & ATTR_UNDERLINE) {
++	if (base.mode & ATTR_UNDERLINE || base.mode & ATTR_URL) {
+ 		XftDrawRect(xw.draw, fg, winx, winy + dc.font.ascent * chscale + 1,
+ 				width, 1);
+ 	}
+@@ -1878,6 +1883,11 @@
+ 	} else {
+ 		len = XLookupString(e, buf, sizeof buf, &ksym, NULL);
+ 	}
++
++	/* KeyRelease not relevant to shortcuts */
++	if (ev->type == KeyRelease)
++		return;
++
+ 	/* 1. shortcuts */
+ 	for (bp = shortcuts; bp < shortcuts + LEN(shortcuts); bp++) {
+ 		if (ksym == bp->keysym && match(bp->mod, e->state)) {
