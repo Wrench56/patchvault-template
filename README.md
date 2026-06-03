@@ -11,7 +11,7 @@ PatchVault is a simple POSIX-compliant* system made for developers who still enj
 To start using a new PatchVault, it is advised for new users to start out by using the PatchVault (Standard) Tool, a.k.a `pvt`. One can install this using the following command:
 
 ```sh
-curl -fsSL "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/tools/pv-install.sh" | sh -s -- -s "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/"
+curl -fsSL "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/tools/pv-install.sh" | sh -s -- -s -b "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/"
 ```
 
 After installing `pvt`, the usage is pretty self-explanatory. It is advised to directly use `pvt`'s `patch` command over manually `fetch`-ing and `apply`-ing patchsets.
@@ -25,7 +25,7 @@ Due to the deliberate structure of the project, it is rather simple to manually 
 Start by copying this repository. It is advised that one changes the above URLs to match the repositories (in case the tools diverge in either the template or in the User's repository). Install the tools using:
 
 ```sh
-curl -fsSL "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/tools/pv-install.sh" | sh -s -- -s -d -c "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/"
+curl -fsSL "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/tools/pv-install.sh" | sh -s -- -s -d -c -b "https://raw.githubusercontent.com/Wrench56/patchvault-template/refs/heads/main/"
 ```
 
 It is advised that an automatic CI/CD pipeline be set up to run `pv-ci all` command ensuring every file is auto-updated.
