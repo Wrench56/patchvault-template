@@ -57,11 +57,11 @@ verify_urls() {
     echo "Verified index URLs!"
 }
 
-refresh_index() {
+regen_index() {
     baseurl="$1"
 
     echo "Refreshing root index"
-    touch "index"
+    printf "" > "index"
     for pkg in pkgs/*; do
         if [ ! -e "$pkg" ]; then
             continue
@@ -242,7 +242,7 @@ build_patchsets() {
 }
 
 if [ "$#" -eq 0 ]; then
-    echo "Usage: pv-ci lint-index|verify-urls|verify-distinfo|regen-distinfo|regen-flags|refresh-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
+    echo "Usage: pv-ci lint-index|verify-urls|verify-distinfo|regen-distinfo|regen-flags|regen-index <baseurl>|build-patchsets <baseurl>|all <baseurl>"
     exit 0
 fi
 
@@ -256,8 +256,8 @@ case "$1" in
     verify-distinfo)
         verify_distinfo
         ;;
-    refresh-index)
-        refresh_index "$2"
+    regen-index)
+        regen_index "$2"
         ;;
     regen-distinfo)
         regen_distinfo
@@ -269,13 +269,13 @@ case "$1" in
         build_patchsets "$2"
         ;;
     all)
-        lint_index
-        verify_urls
-        verify_distinfo
-        refresh_index "$2"
+        regen_index "$2"
         build_patchsets "$2"
         regen_distinfo
         regen_flags
+        lint_index
+        verify_urls
+        verify_distinfo
         ;;
     *)
         die "Unknown command: $1"
