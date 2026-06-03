@@ -1,0 +1,48 @@
+name: Generate PatchVault Metadata
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run generators
+        run: |
+          BASEURL="https://raw.githubusercontent.com/${{ github.repository }}/main"
+
+          chmod +x tools/pv-ci.sh
+          ./tools/pv-ci.sh regen-index "$BASEURL"
+          ./tools/pv-ci.sh build-patchsets "$BASEURL"
+          ./tools/pv-ci.sh regen-distinfo
+          ./tools/pv-ci.sh regen-flags
+
+      - name: Commit metadata
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .
+
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+
+          git commit -m "chore: update PatchVault [skip ci]"
+          git push
+
+      - name: Verify PatchVault
+        run: |
+          chmod +x tools/pv-ci.sh
+          ./tools/pv-ci.sh lint-index
+          ./tools/pv-ci.sh verify-urls
+          ./tools/pv-ci.sh verify-distinfo
