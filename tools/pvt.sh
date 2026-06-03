@@ -60,7 +60,10 @@ verify_distinfo() {
 fetch_file() {
     url="$1"
     dest="$2"
-    if command -v curl > /dev/null 2>&1; then
+
+    if [ -f "$url" ]; then
+        cp "$url" "$dest"
+    elif command -v curl > /dev/null 2>&1; then
         curl -fsSL -o "$dest" "$url"
     elif command -v wget > /dev/null 2>&1; then
         wget -q -O "$dest" "$url"
